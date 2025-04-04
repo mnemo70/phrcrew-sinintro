@@ -39,7 +39,7 @@ MAIN:
 
 ;Always clear your BSS hunks
 	lea	copperlist2,a0
-	move.w	#(BSS_SIZE/2)-1,d0
+	move.w	#(BSS_SIZE/4)-1,d0
 	moveq	#0,d1
 clrloop:
 	move.l	d1,(a0)+

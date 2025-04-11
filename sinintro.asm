@@ -799,52 +799,52 @@ mus_play:
 
 ;D7 contains an alternating 1/0 flag.
 ;On 1, the Paula registers are set
-;On 0, the audio channels contained in d5 are disabled in DMACON
+;On 0, d5 is written to DMACON, disabling audio channels
 ;The player is called every frame (PAL=50).
 ;This means the song steps are played at 25 frames per second.
 
 mus_doplay:
-	cmp.w	#0,d7
-	beq	lbC0160FE
-	move.w	#0,d7
-	bra	lbC016112
+	cmp.w	#0,d7			;check frame flag
+	beq	mus_reset_dma
+	move.w	#0,d7			;toggle flag
+	bra	mus_do_music		;handle music
 
-lbC0160FE:
-	move.w	#1,d7
-	move.w	d5,$DFF096
-lbC016108:
+mus_reset_dma:
+	move.w	#1,d7			;toggle flag
+	move.w	d5,$DFF096		;reset channel in mask in DMACON
+mus_store_regs:
 	movem.l	d0-d7/a0-a6,mus_registers
 	rts
 
-lbC016112:
+mus_do_music:
 	add.w	#8,a0			;next step in pattern
 	move.w	(a0),d2
 	sub.w	#$10,a1
 	cmp.w	#$FFFF,d2		;pattern end?
-	bne	lbC016148
+	bne	mus_play_step
 
 	move.l	#mus_pattdata,a0
 	add.w	#$10,a1
 	move.w	(a1),d2
 	cmp.w	#$FFFF,d2		;end song?
 	beq	mus_doinit
-	bra	lbC016148
+	bra	mus_play_step
 
 mus_doinit:
 	move.l	#mus_songdata,a1
 	move.l	#mus_pattdata,a0
-lbC016148:
+mus_play_step:
 	move.w	#3,d6
 	move.w	#0,d5			;DMACON value
 	move.w	#1,d4			;DMACON channel bit
 	move.l	#$DFF0A0,a3
 mus_chloop:
-	move.w	(a1),d2			;pattern number
-	move.w	2(a1),d3		;note offset
+	move.w	(a1),d2			;get pattern number
+	move.w	2(a1),d3		;get note offset (transpose)
 	mulu	#$102,d2		;pattern size plus the $FFFF flag
 	move.w	d2,d0
 	add.w	d0,a0
-	move.w	(a0),d2			;instrument number
+	move.w	(a0),d2			;get instrument number
 	mulu	#8,d2
 	move.l	#mus_instr_table,a2
 	add.w	d2,a2
@@ -855,8 +855,8 @@ mus_chloop:
 	move.w	(a2),(a3)		;AUDxLEN sample length (words)
 	add.w	#2,a3
 
-	move.w	2(a0),d2		;note index
-	add.w	d3,d2			;add note offset
+	move.w	2(a0),d2		;get note index
+	add.w	d3,d2			;add note offset (transpose)
 	mulu	#2,d2
 	move.l	#mus_period,a2
 	add.w	d2,a2
@@ -867,16 +867,16 @@ mus_chloop:
 	add.w	#4,a1
 	move.w	6(a0),d2		;Channel enable flag
 	sub.w	d0,a0
-	cmp.w	#0,d2
+	cmp.w	#0,d2			;is flag set?
 	bne	mus_voiceon
-	add.w	d4,d5
+	add.w	d4,d5			;set DMACON mask for channel if voice_enable==0
 mus_voiceon:
 	mulu	#2,d4
 	dbra	d6,mus_chloop
 
-	move.w	#$820F,$DFF096		;Enable all audio channels
+	move.w	#$820F,$DFF096		;Enable ALL audio channels
 	move.l	#$DFF0A0,a3
-	bra	lbC016108
+	bra	mus_store_regs
 
 ;Stores contents of D0-D7,A0-A6
 mus_registers:	ds.l	15
@@ -904,9 +904,12 @@ mus_period:
 ;
 
 ;Defines the steps in the song.
-;Each line holds 4 pattern numbers for the 4 Paula channels with their
-;transpose value that gets added to the note index from the pattern.
-;Song ends at $FFFF
+;Each line holds 4 pattern numbers for the 4 Paula channels with a
+;transpose value that gets added to the note indexes from the patterns.
+;Song ends with $FFFF
+
+;<pattern voice 0>,<transpose voice 0>,<pattern voice 1>,<transpose voice 1>,
+;<pattern voice 2>,<transpose voice 2>,<pattern voice 3>,<transpose voice 3>,
 
 mus_songdata:
 	dc.w	8,0,0,0,0,0,0,0
@@ -1173,7 +1176,7 @@ mus_songdata:
 
 ;Defines the patterns
 
-;The patterns have 8 steps with each line having 4 entries for the 4 Paula channels:
+;The patterns have 32 steps with each line having 4 entries:
 ;+00 WORD Instrument index
 ;+02 WORD Note index
 ;+04 WORD Volume
